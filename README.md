@@ -6,7 +6,15 @@ It is based on "Check Solaris ZFS Pools" but is completely rewritten.
 
 For my environment with different OS using ZFS (Solaris, OpenSolaris, SmartOS, FreeBSD) I needed a Nagios plugin which is running on all OS. 
 
-Based on my research (http://www.claudiokuenzler.com/blog/345/monitor-zfs-disk-pools-nagios-plugin-comparison) I finally decided to take an existing plugin and rewrite it.
+Added some more features after fork:
 
-You may find a full documentation with examples on:
+- support for non-root users running the script like (ncap/nrpe/nagios)
+- simplified check flow
+
+TODO:
+- make script posix conform for ncpa agent which uses posix shell in default for checks
+
+Based on the orignial Skript of Claudio Kuenzler @ http://www.claudiokuenzler.com
+
+You may find a full documentation with examples on the original script:
 http://www.claudiokuenzler.com/nagios-plugins/check_zpools.php
