@@ -34,10 +34,10 @@ ZPOOLCMD='zpool'
 #########################################################################
 help="check_zpools.sh (c) 2006-2014 several authors\n
 Usage: $0 -p (poolname|ALL) [-w warnpercent] [-c critpercent]\n
-Example: $0 -p ALL -w 80 -c 90"
+Example: $0 -p ALL -w 80 -c 90
 non-root:   Rember to add something like:
             <nagios-user>   ALL=(root) NOPASSWD: `which zpool`
-            to your sudoers file
+            to your sudoers file"
 #########################################################################
 # Check necessary commands are available
 for cmd in zpool awk [
@@ -51,9 +51,14 @@ done
 #########################################################################
 # Check if we are running as root (bad) or 'nagios' user (good)
 if [ x`id -u` = 'x0' ]; then
-    ZPOOLCMD='sudo zpool'
+    ZPOOLCMD='zpool'		 # you don't run this as root, aren't you?
 else
-    ZPOOLCMD='zpool'        # you don't run this as root, aren't you?
+    if sudo -n zpool > /dev/null 2>&1; then 
+    	ZPOOLCMD='sudo -n zpool' 
+    else
+	echo "UNKNOWN: can't execute zpool via sudo, check your sudoers file!"
+	exit ${STATE_UNKNOWN}
+    fi
 fi
 #########################################################################
 # Check for people who need help - aren't we all nice ;-)
@@ -86,10 +91,18 @@ if [[ $warn -gt $crit ]]; then echo "Warning threshold cannot be greater than cr
 #########################################################################
 # What needs to be checked?
 ## Check all pools
-if [ $pool = "ALL" ]
-then
-  POOLS=($($ZPOOLCMD list -Ho name))
+if [ $pool = "ALL" ]; then
+  if POOLS=($($ZPOOLCMD list -Ho name)); then	
+  	p=0
+  else 
+	echo "UNKNOWN: getting Pool Names failed, may be missing user rights to run 'zpool'?"
+	exit $STATE_UNKNOWN
+  fi
+else
+  POOLS="$pool"
   p=0
+fi
+
   for POOL in ${POOLS[*]}
   do 
     CAPACITY=$($ZPOOLCMD list -Ho capacity $POOL | awk -F"%" '{print $1}')
@@ -120,29 +133,6 @@ then
     echo "ZFS POOL ALARM: ${error[*]}|${perfdata[*]}"; exit ${exit_code}
   else echo "ALL ZFS POOLS OK (${POOLS[*]})|${perfdata[*]}"; exit 0
   fi
-  
-## Check single pool
-else 
-  CAPACITY=$($ZPOOLCMD list -Ho capacity $pool | awk -F"%" '{print $1}')
-  HEALTH=$($ZPOOLCMD list -Ho health $pool)
-
-  if [[ -n $warn ]] && [[ -n $crit ]]
-  then 
-    # Check with thresholds
-    if [ $HEALTH != "ONLINE" ]; then echo "ZFS POOL $pool health is $HEALTH|$pool=${CAPACITY}%"; exit ${STATE_CRITICAL}
-    elif [[ $CAPACITY -gt $crit ]]; then echo "ZFS POOL $pool usage is CRITICAL (${CAPACITY}%|$pool=${CAPACITY}%)"; exit ${STATE_CRITICAL}
-    elif [[ $CAPACITY -gt $warn && $CAPACITY -lt $crit ]]; then echo "ZFS POOL $pool usage is WARNING (${CAPACITY}%)|$pool=${CAPACITY}%"; exit ${STATE_WARNING}
-    else echo "ALL ZFS POOLS OK ($pool)|$pool=${CAPACITY}%"; exit ${STATE_OK}
-    fi
-  else
-    # Check without thresholds
-    if [ $HEALTH != "ONLINE" ]
-    then echo "ZFS POOL $pool health is $HEALTH|$pool=${CAPACITY}%"; exit ${STATE_CRITICAL}
-    else echo "ALL ZFS POOLS OK ($pool)|$pool=${CAPACITY}%"; exit ${STATE_OK}
-    fi
-  fi 
-
-fi
 
 echo "UKNOWN - Should never reach this part"
 exit ${STATE_UNKNOWN}
