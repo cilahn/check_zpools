@@ -5,7 +5,8 @@
 # Authors:      Aldo Fabi             First version (2006-09-01)
 #               Vitaliy Gladkevitch   Forked (2013-02-04)
 #               Claudio Kuenzler      Complete redo, perfdata, etc (2013-2014)
-# Doc:          http://www.claudiokuenzler.com/nagios-plugins/check_zpools.php
+#               Thomas Scholten       (forked) add non-root user support, bugfixing (2015-)
+# OldDoc:       http://www.claudiokuenzler.com/nagios-plugins/check_zpools.php
 # History:
 # 2006-09-01    Original first version
 # 2006-10-04    Updated (no change history known)
@@ -17,20 +18,26 @@
 # 2013-07-11    Bugfix in zpool health check
 # 2014-02-10    Bugfix in threshold comparison
 # 2014-03-11    Allow plugin to run without enforced thresholds
+# 2015-10-06    add sudo, fix ok bug when non non root, posix compliance
 #########################################################################
 ### Begin vars
-STATE_OK=0 # define the exit code if status is OK
-STATE_WARNING=1 # define the exit code if status is Warning
-STATE_CRITICAL=2 # define the exit code if status is Critical
-STATE_UNKNOWN=3 # define the exit code if status is Unknown
+STATE_OK=0                          # define the exit code if status is OK
+STATE_WARNING=1                     # define the exit code if status is Warning
+STATE_CRITICAL=2                    # define the exit code if status is Critical
+STATE_UNKNOWN=3                     # define the exit code if status is Unknown
 # Set path
 PATH=$PATH:/usr/sbin:/sbin
 export PATH
+# add non root support
+ZPOOLCMD='zpool'
 ### End vars
 #########################################################################
 help="check_zpools.sh (c) 2006-2014 several authors\n
 Usage: $0 -p (poolname|ALL) [-w warnpercent] [-c critpercent]\n
 Example: $0 -p ALL -w 80 -c 90"
+non-root:   Rember to add something like:
+            <nagios-user>   ALL=(root) NOPASSWD: `which zpool`
+            to your sudoers file
 #########################################################################
 # Check necessary commands are available
 for cmd in zpool awk [
@@ -41,6 +48,13 @@ do
  exit ${STATE_UNKNOWN}
  fi
 done
+#########################################################################
+# Check if we are running as root (bad) or 'nagios' user (good)
+if [ x`id -u` = 'x0' ]; then
+    ZPOOLCMD='sudo zpool'
+else
+    ZPOOLCMD='zpool'        # you don't run this as root, aren't you?
+fi
 #########################################################################
 # Check for people who need help - aren't we all nice ;-)
 if [ "${1}" = "--help" -o "${#}" = "0" ];
@@ -74,12 +88,12 @@ if [[ $warn -gt $crit ]]; then echo "Warning threshold cannot be greater than cr
 ## Check all pools
 if [ $pool = "ALL" ]
 then
-  POOLS=($(zpool list -Ho name))
+  POOLS=($($ZPOOLCMD list -Ho name))
   p=0
   for POOL in ${POOLS[*]}
   do 
-    CAPACITY=$(zpool list -Ho capacity $POOL | awk -F"%" '{print $1}')
-    HEALTH=$(zpool list -Ho health $POOL)
+    CAPACITY=$($ZPOOLCMD list -Ho capacity $POOL | awk -F"%" '{print $1}')
+    HEALTH=$($ZPOOLCMD list -Ho health $POOL)
     # Check with thresholds
     if [[ -n $warn ]] && [[ -n $crit ]]
     then
@@ -109,8 +123,8 @@ then
   
 ## Check single pool
 else 
-  CAPACITY=$(zpool list -Ho capacity $pool | awk -F"%" '{print $1}')
-  HEALTH=$(zpool list -Ho health $pool)
+  CAPACITY=$($ZPOOLCMD list -Ho capacity $pool | awk -F"%" '{print $1}')
+  HEALTH=$($ZPOOLCMD list -Ho health $pool)
 
   if [[ -n $warn ]] && [[ -n $crit ]]
   then 
