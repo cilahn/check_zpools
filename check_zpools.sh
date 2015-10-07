@@ -67,6 +67,7 @@ if [ "${1}" = "--help" -o "${#}" = "0" ];
 fi
 #########################################################################
 # Get user-given variables
+
 while getopts "p:w:c:" Input;
 do
        case ${Input} in
@@ -83,24 +84,23 @@ done
 if [ -z $pool ]; then echo -e $help; exit ${STATE_UNKNOWN}; fi
 #########################################################################
 # Verify threshold sense
-if [ -z $warn -o -z $crit ]; then
+if [ -z "$warn" -o -z "$crit" ]; then
 	echo "Both warning and critical thresholds must be set"
 	exit $STATE_UNKNOWN
 fi
-if [ $warn -gt $crit ]; then 
+if [ "$warn" -gt "$crit" ]; then 
 	echo "Warning threshold cannot be greater than critical" 
 	exit $STATE_UNKNOWN
 fi
 #########################################################################
 # What needs to be checked?
 ## Check all pools
-if [ $pool = "ALL" ]; then
+if [ "$pool" = "ALL" ]; then
   	POOLS=`$ZPOOLCMD list -Ho name`
 else
   	POOLS="$pool"
 fi
 
-p=0
 error=''
 perfdata=''
 fcrit=0
@@ -109,28 +109,36 @@ for POOL in `echo -n "$POOLS"`; do
     CAPACITY=$($ZPOOLCMD list -Ho capacity $POOL | awk -F"%" '{print $1}')
     HEALTH=$($ZPOOLCMD list -Ho health $POOL)
     # Check with thresholds
-    if [ -n $warn ] && [ -n $crit ]
+    if [ -n "$warn" ] && [ -n "$crit" ]
     then
-      if [ $CAPACITY -ge $crit ]
-      then error[${p}]="POOL $POOL usage is CRITICAL (${CAPACITY}%)"; fcrit=1
-      elif [ $CAPACITY -ge $warn -a $CAPACITY -lt $crit ]
-      then error="${error}POOL $POOL usage is WARNING (${CAPACITY}%) "
-      elif [ $HEALTH != "ONLINE" ]
-      then error[${p}]="$POOL health is $HEALTH"; fcrit=1
+    if [ "$CAPACITY" -ge "$crit" ]; then 
+	error="${error}POOL $POOL usage is CRITICAL (${CAPACITY}%) "
+	fcrit=1
+      elif [ "$CAPACITY" -ge "$warn" -a "$CAPACITY" -lt "$crit" ]; then 
+	error="${error}POOL $POOL usage is WARNING (${CAPACITY}%) "
+      elif [ "$HEALTH" != "ONLINE" ]; then 
+	error="${error}$POOL health is $HEALTH "
+	fcrit=1
       fi
     # Check without thresholds
     else 
-      if [ $HEALTH != "ONLINE" ]
-      then error[${p}]="$POOL health is $HEALTH"; fcrit=1
+      if [ "$HEALTH" != "ONLINE" ]; then 
+	error="${error}$POOL health is $HEALTH "
+	fcrit=1
       fi
     fi
     perfdata="${perfdata}$POOL=${CAPACITY}% "
 done
 
   if [ -n "$error" ]; then 
-    if [ $fcrit -eq 1 ]; then exit_code=2; else exit_code=1; fi
+    if [ $fcrit -eq 1 ]; then 	
+	exit_code=2
+    else exit_code=1
+    fi
     echo "ZFS POOL ALARM: $error|$perfdata"; exit ${exit_code}
-  else echo "ALL ZFS POOLS OK ($POOLS)|$perfdata"; exit 0
+  else 
+	echo "ALL ZFS POOLS OK ($POOLS)|$perfdata"
+	exit 0
   fi
 
 echo "UKNOWN - Should never reach this part"
