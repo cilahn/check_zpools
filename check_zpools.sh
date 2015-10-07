@@ -28,15 +28,13 @@ STATE_UNKNOWN=3                     # define the exit code if status is Unknown
 # Set path
 PATH=$PATH:/usr/sbin:/sbin
 export PATH
-# add non root support
-ZPOOLCMD='zpool'
 ### End vars
 #########################################################################
 help="check_zpools.sh (c) 2006-2014 several authors\n
 Usage: $0 -p (poolname|ALL) [-w warnpercent] [-c critpercent]\n
 Example: $0 -p ALL -w 80 -c 90
 non-root:   Rember to add something like:
-            <nagios-user>   ALL=(root) NOPASSWD: `which zpool`
+            <nagios-user>   ALL=(root) NOPASSWD: /sbin/zpool
             to your sudoers file"
 #########################################################################
 # Check necessary commands are available
@@ -53,7 +51,7 @@ done
 if [ x`id -u` = 'x0' ]; then
     ZPOOLCMD='zpool'		 # you don't run this as root, aren't you?
 else
-    if sudo -n zpool > /dev/null 2>&1; then 
+    if sudo -n zpool list >/dev/null 2>&1; then 
     	ZPOOLCMD='sudo -n zpool' 
     else
 	echo "UNKNOWN: can't execute zpool via sudo, check your sudoers file!"
@@ -85,35 +83,38 @@ done
 if [ -z $pool ]; then echo -e $help; exit ${STATE_UNKNOWN}; fi
 #########################################################################
 # Verify threshold sense
-if [[ -n $warn ]] && [[ -z $crit ]]; then echo "Both warning and critical thresholds must be set"; exit $STATE_UNKNOWN; fi
-if [[ -z $warn ]] && [[ -n $crit ]]; then echo "Both warning and critical thresholds must be set"; exit $STATE_UNKNOWN; fi
-if [[ $warn -gt $crit ]]; then echo "Warning threshold cannot be greater than critical"; exit $STATE_UNKNOWN; fi
+if [ -z $warn -o -z $crit ]; then
+	echo "Both warning and critical thresholds must be set"
+	exit $STATE_UNKNOWN
+fi
+if [ $warn -gt $crit ]; then 
+	echo "Warning threshold cannot be greater than critical" 
+	exit $STATE_UNKNOWN
+fi
 #########################################################################
 # What needs to be checked?
 ## Check all pools
 if [ $pool = "ALL" ]; then
-  if POOLS=($($ZPOOLCMD list -Ho name)); then	
-  	p=0
-  else 
-	echo "UNKNOWN: getting Pool Names failed, may be missing user rights to run 'zpool'?"
-	exit $STATE_UNKNOWN
-  fi
+  	POOLS=`$ZPOOLCMD list -Ho name`
 else
-  POOLS="$pool"
-  p=0
+  	POOLS="$pool"
 fi
 
-  for POOL in ${POOLS[*]}
-  do 
+p=0
+error=''
+perfdata=''
+fcrit=0
+
+for POOL in `echo -n "$POOLS"`; do 
     CAPACITY=$($ZPOOLCMD list -Ho capacity $POOL | awk -F"%" '{print $1}')
     HEALTH=$($ZPOOLCMD list -Ho health $POOL)
     # Check with thresholds
-    if [[ -n $warn ]] && [[ -n $crit ]]
+    if [ -n $warn ] && [ -n $crit ]
     then
-      if [[ $CAPACITY -ge $crit ]]
+      if [ $CAPACITY -ge $crit ]
       then error[${p}]="POOL $POOL usage is CRITICAL (${CAPACITY}%)"; fcrit=1
-      elif [[ $CAPACITY -ge $warn && $CAPACITY -lt $crit ]]
-      then error[$p]="POOL $POOL usage is WARNING (${CAPACITY}%)"
+      elif [ $CAPACITY -ge $warn -a $CAPACITY -lt $crit ]
+      then error="${error}POOL $POOL usage is WARNING (${CAPACITY}%) "
       elif [ $HEALTH != "ONLINE" ]
       then error[${p}]="$POOL health is $HEALTH"; fcrit=1
       fi
@@ -123,15 +124,13 @@ fi
       then error[${p}]="$POOL health is $HEALTH"; fcrit=1
       fi
     fi
-    perfdata[$p]="$POOL=${CAPACITY}% "
-    let p++
-  done
+    perfdata="${perfdata}$POOL=${CAPACITY}% "
+done
 
-  if [[ ${#error[*]} -gt 0 ]]
-  then 
-    if [[ $fcrit -eq 1 ]]; then exit_code=2; else exit_code=1; fi
-    echo "ZFS POOL ALARM: ${error[*]}|${perfdata[*]}"; exit ${exit_code}
-  else echo "ALL ZFS POOLS OK (${POOLS[*]})|${perfdata[*]}"; exit 0
+  if [ -n "$error" ]; then 
+    if [ $fcrit -eq 1 ]; then exit_code=2; else exit_code=1; fi
+    echo "ZFS POOL ALARM: $error|$perfdata"; exit ${exit_code}
+  else echo "ALL ZFS POOLS OK ($POOLS)|$perfdata"; exit 0
   fi
 
 echo "UKNOWN - Should never reach this part"
